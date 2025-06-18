@@ -235,8 +235,19 @@ export class TrainingSession {
       { field_name: "end_position_lat", units: "degrees" },
       { field_name: "end_position_long", units: "degrees" }
     );
-
                      
+  }
+
+  getSessionSummary(): Record<string, any> {
+    // all primitive values on the root level of the sessionData
+    const summary: Record<string, any> = {};
+    Object.entries(this.sessionData).forEach(([key, value]) => {
+      if (typeof value !== 'object' && value !== null) {
+        // Check if the value is a primitive type (string, number, boolean)
+        summary[key] = value;
+      }
+    });  
+    return summary;
   }
 
   getFieldUnit(fieldName: string): string | "" {
@@ -899,6 +910,6 @@ export class TrainingSession {
 
     + `\n_______________________________________\n` 
     return summaryString;
+  }
 }
 
-}

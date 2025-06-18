@@ -2,10 +2,12 @@
 import { ref, onMounted } from 'vue'
 import FilePicker from './components/FilePicker.vue'
 import ZoneDistributionChart from './components/ZoneDistributionChart.vue'
-import { parseFitData, extractSummary } from './utils/fitFileParser' 
+import SummaryDisplay from './components/SummaryDisplay.vue'
+
+import { parseFitData } from './utils/fitFileParser' 
 import { TrainingSessionAnalyser } from './utils/trainingSessionAnalyser'
 import { siven } from './utils/athlete'
-import { IZoneDistributionItem } from './utils/zones'
+import { type IZoneDistributionItem } from './utils/zones'
 
 // Define reactive state variables
 const isLoading = ref(false)
@@ -38,12 +40,12 @@ async function handleFileContent(content: ArrayBuffer | string, file: File) {
     const data = await parseFitData(content);
     parsedData.value = data;
     
-    // Extract summary
-    summary.value = extractSummary(data);
-    
     // Create a new TrainingSessionAnalyser with the parsed data and athlete
     analyser.value = new TrainingSessionAnalyser(data, siven);
     
+    // Extract summary
+    summary.value = analyser.value.getSessionSummary();
+    console.log('Session Summary:', summary.value);
     // Get heart rate distribution using the analyser
     heartRateDistribution.value = analyser.value.getHeartRateDistribution();
     console.log('Heart Rate Distribution:', heartRateDistribution.value);
@@ -98,14 +100,7 @@ onMounted(() => {
       <div class="collapsible-sections">
         <div v-if="summary && !isLoading" class="summary-container">
           <details>
-            <summary>Show Session Summary</summary>
-            <div class="summary-grid">
-              <div class="summary-item" v-if="summary.sport">
-                <div class="label">Sport</div>
-                <div class="value">{{ summary.sport }} {{ summary.subSport ? `(${summary.subSport})` : '' }}</div>
-              </div>
-              <!-- Add other summary items here -->
-            </div>
+             <summary-display :summary="summary" />
           </details>
         </div>
         

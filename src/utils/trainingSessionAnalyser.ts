@@ -17,4 +17,9 @@ export class TrainingSessionAnalyser {
             this.athlete.heartRateZones
         );
     }
+
+    getSessionSummary(): any {
+        const summary = this.trainingSession.getSessionSummary();
+        return summary
+    }
 }

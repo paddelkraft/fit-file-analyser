@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, PropType, watch } from 'vue';
-import { IZoneDistributionItem } from '../utils/zones';
+import {  onMounted, computed, type PropType, watch } from 'vue';
+import { type IZoneDistributionItem } from '../utils/zones';
+//@ ts-ignore
 import * as Plotly from 'plotly.js-dist'; // Using plotly.js-dist instead of plotly.js
 
 // Define component props
@@ -162,7 +163,6 @@ watch(() => props.zoneData, () => {
 
 <template>
   <div class="chart-container">
-    <h3>{{ title }}</h3>
     <div :id="uniqueChartId" class="chart"></div>
   </div>
 </template>
