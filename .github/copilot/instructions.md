@@ -4,7 +4,7 @@
 This is a Vue.js application for analyzing and visualizing FIT (Flexible and Interoperable Data Transfer) files, commonly used by fitness devices from Garmin, Wahoo, and other sports technology companies. It parses .fit files and displays detailed information about workout sessions, routes, and performance metrics.
 
 ## Key Technologies
-- Vue.js framework
+- Vue.js framework version 3
 - TypeScript
 - Plotly.js for data visualization
 - FIT file parsing

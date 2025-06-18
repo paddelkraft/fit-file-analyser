@@ -7,9 +7,7 @@
         <span class="summary-value">{{ formatValue(value, key) }}</span>
       </div>
     </div>
-    <div v-else class="no-data">
-      No summary data available
-    </div>
+    <div v-else class="no-data">No summary data available</div>
   </div>
 </template>
 
@@ -31,19 +29,20 @@ export default {
       // Convert camelCase to Title Case with spaces
       return key
         .replace(/([A-Z])/g, ' $1')
-        .replace(/^./, str => str.toUpperCase());
+        .replace(/^./, str => str.toUpperCase())
+        .replace(/_/g, ' '); // Replace underscores with spaces
     },
     formatValue(value, key) {
       // Handle null or undefined
       if (value === null || value === undefined) {
         return 'N/A';
       }
-      
+
       // Format dates - check if it's a Date object or an ISO date string
       if (value instanceof Date) {
         return value.toLocaleString();
       }
-      
+
       if (typeof value === 'string') {
         // Try to parse date strings
         if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) {
@@ -57,7 +56,7 @@ export default {
           }
         }
       }
-      
+
       // Format numbers with appropriate units
       if (typeof value === 'number') {
         // Format different types of data appropriately
@@ -67,63 +66,94 @@ export default {
           return this.formatDistance(value);
         } else if (this.isSpeedProperty(key)) {
           return this.formatSpeed(value);
+        }else if (this.isGpsCoordinateProperty(key)){
+            return value + "°";
+        } else if (this.isDegreeProperty(key)) {
+            return this.formatDegree(value) ;
+        } else{
+            // Default number formatting
+            return this.formatNumber(value);
         }
-        
+
         // Default number formatting
         return value.toString();
       }
-      
+
       // Handle boolean values
       if (typeof value === 'boolean') {
         return value ? 'Yes' : 'No';
       }
-      
+
       // Handle arrays and objects
       if (typeof value === 'object') {
         return JSON.stringify(value);
       }
-      
+
       // Default case
       return value.toString();
     },
-    
+
     // Helper methods for formatting values
     isTimeProperty(key) {
       return /time|duration|elapsed|timer/i.test(key);
     },
-    
+
     isDistanceProperty(key) {
       return /distance|ascent|descent/i.test(key);
     },
-    
+
     isSpeedProperty(key) {
       return /speed|pace/i.test(key);
     },
-    
+    isGpsCoordinateProperty(key) {
+      return /latitude|longitude|_lat|long/i.test(key);
+    },
+
+    isDegreeProperty(key) {
+      return /BoatJump|HipRot/i.test(key);
+    },
+
+    formatDegree(value ){
+       return "" + value.toFixed(6) + "°";
+    },
+
     formatTime(seconds) {
       const hours = Math.floor(seconds / 3600);
       const minutes = Math.floor((seconds % 3600) / 60);
       const remainingSeconds = Math.floor(seconds % 60);
-      
+
       if (hours > 0) {
         return `${hours}h ${minutes}m ${remainingSeconds}s`;
       } else {
         return `${minutes}m ${remainingSeconds}s`;
       }
     },
-    
-    formatDistance(meters) {
-      if (meters >= 1000) {
-        return `${(meters / 1000).toFixed(2)} km`;
+
+    formatDistance(km) {
+      if (km >= 1000) {
+        return `${(km / 1000).toFixed(2)} km`;
       } else {
-        return `${meters.toFixed(0)} m`;
+        return `${this.formatNumber(km)} km`;
       }
     },
-    
-    formatSpeed(metersPerSecond) {
-      // Convert to km/h
-      const kmh = metersPerSecond * 3.6;
-      return `${kmh.toFixed(1)} km/h`;
+
+    formatSpeed(kmh) {
+      return `${ this.formatNumber(kmh)} km/h`;
+    },
+
+    // sounds of numbers to two decimal places
+    formatNumber(number) {
+        if (typeof number !== 'number') {
+            return number; // Return as is if not a number
+        }
+        if (Number.isInteger(number)) {
+        // Return integers as is
+        return number.toString();
+        } else {
+        // Round to two decimal places
+        number = Math.round(number * 100) / 100;
+        return number
+        }
     }
   }
 }
