@@ -1,0 +1,56 @@
+# GitHub Copilot configuration for Fit File Analyser
+
+# Project context
+project_name: Fit File Analyser
+project_description: A Vue.js application for analyzing and visualizing FIT files containing workout data from fitness devices
+tech_stack:
+  - Vue.js
+  - TypeScript
+  - Plotly.js
+  - FIT file parsing
+
+# Custom instructions
+instructions:
+  - All numeric values (except GPS coordinates) must be rounded to a maximum of 2 decimal places for display
+  - GPS coordinates must maintain their full precision
+  - Prefer Vue.js best practices for component design
+  - Use TypeScript for type safety
+  - Follow the project's existing code style
+
+# Code quality guidelines
+code_quality:
+  - Keep components modular and focused on a single responsibility
+  - Use proper TypeScript typing for all functions and variables
+  - Follow Vue.js conventions for component naming and structure
+  - Add JSDoc comments for all public functions and methods
+
+# GPS coordinate fields detection
+gps_fields_detection:
+  # Use pattern matching for fields ending with _lat or _long
+  patterns:
+    - "*_lat"
+    - "*_long"
+  # Additional fields that don't follow the pattern
+  extra_fields:
+    - latitude
+    - longitude
+
+# Example formatting function that should be used as reference
+example_code: |
+  /**
+   * Format a numeric value for display, preserving GPS coordinates
+   * @param {number} value - The value to format
+   * @param {string} fieldName - The name of the field
+   * @returns {number} - The formatted value
+   */
+  function formatDisplayValue(value, fieldName) {
+    if (value === null || value === undefined) return value;
+    if (typeof value !== 'number') return value;
+    
+    // Use pattern matching to detect GPS fields
+    const isGps = fieldName.endsWith('_lat') || 
+                  fieldName.endsWith('_long') ||
+                  ['latitude', 'longitude'].includes(fieldName);
+    
+    return isGps ? value : Number(value.toFixed(2));
+  }
