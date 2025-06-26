@@ -63,7 +63,7 @@ function drawChart() {
   
   // Prepare data for the chart with enhanced y-axis labels including duration
   const data = [{
-    y: zones.map(z => `${z.zone.name} (${formatTime(z.duration)})`),
+    y: zones.map(z => `${z.zone.name} (${z.zone.min}-${z.zone.max}) `),
     x: zones.map(z => parseFloat(z.percentage.toFixed(1))),
     type: 'bar',
     orientation: 'h',
@@ -75,8 +75,8 @@ function drawChart() {
     hoverinfo: 'text',
     hovertext: zones.map(z => 
       `${z.zone.name}<br>` +
-      `Range: ${z.zone.min}-${z.zone.max}<br>` +
-      `Time: ${formatTime(z.duration)}<br>` +
+      //`Range: ${z.zone.min}-${z.zone.max}<br>` +
+      `Time: ${formatTime(z.duration)} <br>` +
       `${z.percentage.toFixed(1)}% of total`
     )
   }];

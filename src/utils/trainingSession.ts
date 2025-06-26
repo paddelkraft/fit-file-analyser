@@ -303,6 +303,10 @@ export class TrainingSession {
     return timeSeries;
   }
 
+  getAllRecords(){
+     return this.records;
+  }
+
 
   transformFieldTimeSeries(fieldName: string, transformer:TimeSeriesTransforerFunction): TimeSeriesPoint [] {
     const timeSeries = this.getFieldTimeSeries(fieldName);

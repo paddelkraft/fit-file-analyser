@@ -1,4 +1,4 @@
-import { TrainingSession } from './trainingSession';
+import { TrainingSession,type TimeSeriesPoint } from './trainingSession';
 import { type Athlete } from './athlete';
 import { type IZoneDistributionItem } from './zones';
 
@@ -16,10 +16,23 @@ export class TrainingSessionAnalyser {
             'heart_rate',
             this.athlete.heartRateZones
         );
-    }
+    } 
 
     getSessionSummary(): any {
         const summary = this.trainingSession.getSessionSummary();
         return summary
     }
+
+    getFieldTimeSeries(fieldName: string): TimeSeriesPoint[] {
+        return this.trainingSession.getFieldTimeSeries(fieldName);
+    }
+
+    getAvailableDataFields(): string[] {
+        return this.trainingSession.getAvailableFields();
+    }
+
+    getAllReccords(){
+        return this.trainingSession.getAllRecords();
+    }
+
 }

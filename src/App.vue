@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted } from 'vue';
+import ActivityChart from './components/ActivityChart.vue';
 import FilePicker from './components/FilePicker.vue'
 import ZoneDistributionChart from './components/ZoneDistributionChart.vue'
 import SummaryDisplay from './components/SummaryDisplay.vue'
@@ -16,6 +17,9 @@ const parsedData = ref<any>(null)
 const summary = ref<any>(null)
 const heartRateDistribution = ref<IZoneDistributionItem[]>([])
 const analyser = ref<TrainingSessionAnalyser | null>(null)
+const availableDataFields = ref<string[]>([])
+// Activity data for the chart
+const activityData = ref<any[]>([])
 
 // Function to handle the file content
 async function handleFileContent(content: ArrayBuffer | string, file: File) {
@@ -49,6 +53,11 @@ async function handleFileContent(content: ArrayBuffer | string, file: File) {
     // Get heart rate distribution using the analyser
     heartRateDistribution.value = analyser.value.getHeartRateDistribution();
     console.log('Heart Rate Distribution:', heartRateDistribution.value);
+
+    // Prepare activity data for the chart
+    activityData.value = analyser.value.getAllReccords();
+    console.log('Activity Data:', activityData.value);
+    availableDataFields.value = analyser.value.getAvailableDataFields();
     
   } catch (error) {
     console.error('Error processing FIT file:', error);
@@ -96,6 +105,17 @@ onMounted(() => {
         :title="`Heart Rate Zone Distribution (${siven.name})`"
         chart-id="heart-rate-chart"
       />
+
+      <div class="activity-view">
+        <h1>Activity Analysis</h1>
+        <ActivityChart 
+          :activityData="activityData" 
+          :availableDataFields="availableDataFields"
+          chartTitle="My Workout Session"
+          :initialAttributes="['heart_rate', 'enhanced_speed']"
+          :chartHeight="600"
+        />
+      </div>
       
       <div class="collapsible-sections">
         <div v-if="summary && !isLoading" class="summary-container">
