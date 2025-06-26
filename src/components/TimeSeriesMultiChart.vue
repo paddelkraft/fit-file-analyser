@@ -10,6 +10,7 @@ interface ChartLineData {
   name: string;
   x: Array<string | number | Date>;
   y: Array<number>;
+  text?: Array<string>; // Text values for hover display (e.g., formatted time)
   type?: 'scatter' | 'bar'; // Add other types as needed
   mode?: 'lines' | 'markers' | 'lines+markers';
   line?: any; // Line properties
@@ -119,9 +120,31 @@ const createPlot = () => {
 
     const plotlyLayout: any = {
       ...defaultLayout,
+      // Increase the bottom margin to ensure X-axis labels are visible
+      margin: {
+        ...defaultLayout.margin,
+        b: 80, // Increased bottom margin
+      },
       xaxis: {
         ...defaultLayout.xaxis,
         title: props.xAxisTitle || '',
+        // Configure visible X-axis with time formatting
+        visible: true,
+        showticklabels: true,
+        automargin: true,
+        tickmode: 'array',
+        // Add custom tickvals and ticktext for time formatting
+        tickvals: determineTickValues(plotlyData),
+        ticktext: determineTickText(plotlyData),
+        // Add hover formatting
+        hoverformat: '%H:%M:%S',
+        // Force bottom positioning of axis labels
+        side: 'bottom',
+        // Ensure text is positioned properly
+        tickangle: 0,
+        tickfont: {
+          size: 10,
+        },
       },
     };
 
@@ -133,6 +156,9 @@ const createPlot = () => {
     // Add height and width if provided
     if (props.height) {
       plotlyLayout.height = props.height;
+    } else {
+      // Set a default height that's large enough
+      plotlyLayout.height = 600;
     }
     if (props.width) {
       plotlyLayout.width = props.width;
@@ -197,6 +223,76 @@ const createPlot = () => {
   }
 };
 
+// Utility function to format seconds into h:mm:ss
+function formatSecondsToTime(seconds: number): string {
+  if (seconds === null || seconds === undefined || isNaN(seconds)) {
+    return '0:00:00';
+  }
+  
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+// Helper function to determine appropriate tick values based on data
+function determineTickValues(data: any[]): number[] | undefined {
+  if (!data || data.length === 0 || !data[0].x || data[0].x.length === 0) {
+    return undefined;
+  }
+  
+  // Check if x values are numeric (seconds)
+  const firstX = data[0].x[0];
+  if (typeof firstX !== 'number') {
+    return undefined; // Not numeric, let Plotly handle it
+  }
+  
+  // Get min and max x values
+  let minX = Number.MAX_SAFE_INTEGER;
+  let maxX = Number.MIN_SAFE_INTEGER;
+  
+  data.forEach(series => {
+    if (Array.isArray(series.x)) {
+      series.x.forEach((x: any) => {
+        if (typeof x === 'number') {
+          minX = Math.min(minX, x);
+          maxX = Math.max(maxX, x);
+        }
+      });
+    }
+  });
+  
+  // Generate evenly spaced tick values (more ticks for better visibility)
+  const range = maxX - minX;
+  const step = Math.max(1, Math.floor(range / 12)); // Increase the number of ticks
+  const tickVals = [];
+  
+  for (let i = minX; i <= maxX; i += step) {
+    tickVals.push(i);
+  }
+  
+  // Ensure we have at least 5 ticks for visibility
+  if (tickVals.length < 5) {
+    // Use more fine-grained ticks
+    const finerStep = Math.max(1, Math.floor(range / 5));
+    tickVals.length = 0;
+    for (let i = minX; i <= maxX; i += finerStep) {
+      tickVals.push(i);
+    }
+  }
+  
+  return tickVals;
+}
+
+// Helper function to format tick labels
+function determineTickText(data: any[]): string[] | undefined {
+  const tickVals = determineTickValues(data);
+  if (!tickVals) return undefined;
+  
+  return tickVals.map(seconds => formatSecondsToTime(seconds));
+}
+
 onMounted(() => {
   nextTick(createPlot);
 });
@@ -223,6 +319,7 @@ watch(
 <style scoped>
 .multi-y-axis-chart {
   width: 100%;
-  height: 500px; /* Default height, can be overridden by props */
+  height: 600px; /* Increased height to ensure X-axis is visible */
+  box-sizing: border-box;
 }
 </style>

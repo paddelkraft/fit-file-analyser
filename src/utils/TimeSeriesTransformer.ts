@@ -1,9 +1,7 @@
-import { ref } from 'vue';
-
 interface TimeSeriesDataPoint {
-  timestamp: string;
-  elapsed_time: number;
-  timer_time: number;
+  timestamp?: string;
+  elapsed_time?: number;
+  timer_time?: number;
   position_lat?: number;
   position_long?: number;
   distance?: number;
@@ -19,6 +17,7 @@ interface ChartLineData {
   name: string;
   x: Array<string | number | Date>;
   y: Array<number>;
+  text?: Array<string>; // Add text property for hover display
   type?: 'scatter' | 'bar';
   mode?: 'lines' | 'markers' | 'lines+markers';
   line?: any;
@@ -59,7 +58,7 @@ interface AxisOptions {
 }
 
 // Default color palette for different metrics
-const DEFAULT_COLORS = {
+const DEFAULT_COLORS: Record<string, string> = {
   heart_rate: '#FF5733', // Red
   enhanced_speed: '#33A1FF', // Blue
   cadence: '#33FF57', // Green
@@ -67,6 +66,23 @@ const DEFAULT_COLORS = {
   distance: '#FFBD33', // Orange
   default: '#777777' // Gray (fallback)
 };
+
+/**
+ * Format seconds into h:mm:ss format
+ * @param seconds - Time in seconds
+ * @returns Formatted time string
+ */
+export function formatSecondsToTime(seconds: number): string {
+  if (seconds === null || seconds === undefined || isNaN(seconds)) {
+    return '0:00:00';
+  }
+  
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
 
 /**
  * Transform time series data into the format required by TimeSeriesMultiChart
@@ -85,15 +101,6 @@ export function transformTimeSeriesData(
   chartTitle: string = 'Activity Data',
   axisConfigs: Record<string, AxisOptions> = {}
 ): ChartConfig {
-  
-  console.log('Transforming time series data for chart:', {
-    timeSeriesData,
-    attributesToDisplay,
-    timeField,
-    chartTitle,
-    axisConfigs
-  });
-
   // Ensure we have data
   if (!timeSeriesData || timeSeriesData.length === 0) {
     return {
@@ -107,11 +114,11 @@ export function transformTimeSeriesData(
   // Extract the time values for x-axis
   const xValues = timeSeriesData.map(dataPoint => {
     if (timeField === 'timestamp') {
-      return new Date(dataPoint[timeField]);
+      return new Date(dataPoint[timeField] ?? '');
     } else if (timeField === 'elapsed_time' || timeField === 'timer_time') {
-      return dataPoint[timeField] || 0; // Use 0 if null/undefined
+      return dataPoint[timeField] ?? 0; // Use 0 if null/undefined
     } else {
-      return dataPoint[timeField] || 0; // Generic fallback, use 0 if null/undefined
+      return dataPoint[timeField] ?? 0; // Generic fallback, use 0 if null/undefined
     }
   });
 
@@ -124,9 +131,14 @@ export function transformTimeSeriesData(
   let rightAxisCount = 0;
 
   attributesToDisplay.forEach((attribute, index) => {
-    // Skip attributes that don't exist in the data
-    if (!timeSeriesData.some(point => attribute in point)) {
-      console.warn(`Attribute "${attribute}" not found in time series data`);
+    // Check if attribute exists in at least one data point
+    const attributeExists = timeSeriesData.some(point => 
+      attribute in point && point[attribute] !== null && point[attribute] !== undefined
+    );
+    
+    // Skip attributes that don't exist in any data points
+    if (!attributeExists) {
+      console.warn(`Attribute "${attribute}" not found or only has null values in time series data`);
       return;
     }
 
@@ -136,7 +148,7 @@ export function transformTimeSeriesData(
     // Extract Y values for this attribute, converting null/undefined to 0
     const yValues = timeSeriesData.map(dataPoint => {
       const value = dataPoint[attribute];
-      return value !== null && value !== undefined ? value : 0;
+      return value ?? 0;
     });
 
     // Determine color and axis configuration
@@ -157,28 +169,41 @@ export function transformTimeSeriesData(
     let position;
     if (axisConfigs[attribute]?.position) {
       position = axisConfigs[attribute].position;
+    } else if (side === 'left') {
+      // Position left axes: closer to 0 means further left
+      position = (leftAxisCount === 0) ? undefined : Math.max(0, 0.05 * leftAxisCount);
+      leftAxisCount++;
     } else {
-      if (side === 'left') {
-        // Position left axes: closer to 0 means further left
-        position = (leftAxisCount === 0) ? undefined : Math.max(0, 0.05 * leftAxisCount);
-        leftAxisCount++;
-      } else {
-        // Position right axes: closer to 1 means further right
-        position = 1 - (rightAxisCount === 0 ? 0.05 : 0.05 * (rightAxisCount + 1));
-        rightAxisCount++;
-      }
+      // Position right axes: closer to 1 means further right
+      position = 1 - (rightAxisCount === 0 ? 0.05 : 0.05 * (rightAxisCount + 1));
+      rightAxisCount++;
     }
 
+    // Create hover template with time formatting for X values
+    let hovertemplate;
+    if (timeField === 'elapsed_time' || timeField === 'timer_time') {
+      // For seconds-based time fields, use a custom function in the hover template
+      hovertemplate = `${displayName}: %{y}<br>Time: %{text}<extra></extra>`;
+    } else {
+      hovertemplate = `${displayName}: %{y}<br>Time: %{x}<extra></extra>`;
+    }
+
+    // Create formatted time values for hover display
+    const textValues = timeField === 'elapsed_time' || timeField === 'timer_time'
+      ? xValues.map(seconds => formatSecondsToTime(seconds as number))
+      : undefined;
+      
     // Add chart line data
     chartData.push({
       name: displayName,
       x: xValues,
       y: yValues,
+      text: textValues, // Add formatted time values for hover display
       type: 'scatter',
       mode: 'lines',
       yaxis: axisId,
       line: { color, width: 2 },
-      hovertemplate: `${displayName}: %{y}<br>Time: %{x}<extra></extra>`
+      hovertemplate
     });
 
     // Add Y-axis configuration
@@ -201,12 +226,10 @@ export function transformTimeSeriesData(
   if (timeField === 'timestamp') {
     xAxisTitle = 'Date & Time';
   } else if (timeField === 'elapsed_time') {
-    xAxisTitle = 'Elapsed Time (s)';
+    xAxisTitle = 'Elapsed Time (h:mm:ss)';
   } else if (timeField === 'timer_time') {
-    xAxisTitle = 'Timer Time (s)';
+    xAxisTitle = 'Timer Time (h:mm:ss)';
   }
-
-  
 
   // Return the final chart configuration
   return {
@@ -214,48 +237,11 @@ export function transformTimeSeriesData(
     data: chartData,
     yAxes,
     xAxisTitle,
-    height: 1000, // Default height
+    height: 600, // Increased default height
     config: {
       responsive: true,
       displayModeBar: true,
       displaylogo: false
     }
-  };
-}
-
-/**
- * Creates a reactive chart configuration that can be passed directly to TimeSeriesMultiChart
- */
-export function useTimeSeriesChart(
-  initialData: TimeSeriesDataPoint[] = [],
-  initialAttributes: string[] = ['heart_rate', 'enhanced_speed'],
-  timeField: string = 'timer_time',
-  chartTitle: string = 'Activity Data',
-  axisConfigs: Record<string, AxisOptions> = {}
-) {
-  const chartConfig = ref(
-    transformTimeSeriesData(initialData, initialAttributes, timeField, chartTitle, axisConfigs)
-  );
-
-  // Function to update the chart data
-  const updateChartData = (
-    newData: TimeSeriesDataPoint[],
-    attributes?: string[],
-    newTimeField?: string,
-    newChartTitle?: string,
-    newAxisConfigs?: Record<string, AxisOptions>
-  ) => {
-    chartConfig.value = transformTimeSeriesData(
-      newData,
-      attributes || initialAttributes,
-      newTimeField || timeField,
-      newChartTitle || chartTitle,
-      newAxisConfigs || axisConfigs
-    );
-  };
-
-  return {
-    chartConfig,
-    updateChartData
   };
 }

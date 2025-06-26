@@ -1,27 +1,13 @@
 <template>
   <div class="activity-chart">
-    <div class="chart-controls" v-if="availableAttributes.length > 0">
-      <h3>Select Data to Display</h3>
-      <div class="attribute-selectors">
-        <label v-for="attr in availableAttributes" :key="attr" class="attribute-checkbox">
-          <input 
-            type="checkbox" 
-            :value="attr" 
-            v-model="selectedAttributes"
-            @change="updateChart"
-          >
-          {{ formatAttributeName(attr) }}
-        </label>
-      </div>
-      <div class="time-selector">
-        <label>Time Display:</label>
-        <select v-model="selectedTimeField" @change="updateChart">
-          <option value="timer_time">Timer Time</option>
-          <option value="elapsed_time">Elapsed Time</option>
-          <option value="timestamp">Timestamp</option>
-        </select>
-      </div>
-    </div>
+    <DataSelector
+      v-if="activityData.length > 0"
+      :activityData="activityData"
+      :selectedAttributes="selectedAttributes"
+      :timeField="selectedTimeField"
+      @update:selectedAttributes="selectedAttributes = $event"
+      @update:timeField="selectedTimeField = $event"
+    />
 
     <TimeSeriesMultiChart
       v-if="activityData.length > 0"
@@ -39,20 +25,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
-import TimeSeriesMultiChart from './TimeSeriesMultiChart.vue';
-import { transformTimeSeriesData } from '../utils/plotlyMultiLineDataTransformer';
+import { ref, onMounted, watch, defineAsyncComponent } from 'vue';
+import { transformTimeSeriesData } from '../utils/TimeSeriesTransformer';
+
+// Import components
+const DataSelector = defineAsyncComponent(() =>
+  import('./DataSelector.vue')
+);
+
+const TimeSeriesMultiChart = defineAsyncComponent(() => 
+  import('./TimeSeriesMultiChart.vue')
+);
 
 interface TimeSeriesDataPoint {
-  timestamp: string;
-  elapsed_time: number;
-  timer_time: number;
+  timestamp?: string;
+  elapsed_time?: number;
+  timer_time?: number;
   [key: string]: any; // Allow for other fields
 }
 
 const props = defineProps<{
   activityData: TimeSeriesDataPoint[];
-  availableDataFields?: string[];
   chartTitle?: string;
   initialAttributes?: string[];
   chartHeight?: number;
@@ -63,31 +56,44 @@ const selectedAttributes = ref<string[]>(props.initialAttributes || []);
 const selectedTimeField = ref<string>('timer_time');
 const chartConfig = ref(transformTimeSeriesData([], []));
 
-// Computed properties
-const availableAttributes = computed(() => {
-  console.log('Available attributes:', props.availableDataFields);
-  if (! props.availableDataFields){
-    return [];
-  } 
-  
-  return props.availableDataFields
+// Watch for changes in selected attributes or time field
+watch([selectedAttributes, selectedTimeField], () => {
+  updateChart();
 });
-
-// If no attributes are initially selected, select the first two available attributes
-watch(availableAttributes, (newAttrs) => {
-  if (selectedAttributes.value.length === 0 && newAttrs.length > 0) {
-    selectedAttributes.value = newAttrs.slice(0, Math.min(2, newAttrs.length));
-    updateChart();
-  }
-}, { immediate: true });
 
 // Watch for changes in activity data
 watch(() => props.activityData, (newData) => {
   if (newData.length > 0) {
+    // If no attributes are selected yet, select the first two
+    if (selectedAttributes.value.length === 0) {
+      // Find attributes that have non-null values in at least one data point
+      const availableAttrs = findAvailableAttributes(newData);
+      if (availableAttrs.length > 0) {
+        selectedAttributes.value = availableAttrs.slice(0, Math.min(2, availableAttrs.length));
+      }
+    }
     updateChart();
   }
-}, { deep: true });
+}, { deep: true, immediate: true });
 
+// Helper function to find available attributes in data
+function findAvailableAttributes(data: any[]): string[] {
+  if (data.length === 0) return [];
+  
+  // Get all unique keys from all data points
+  const allKeys = new Set<string>();
+  data.forEach(dataPoint => {
+    Object.keys(dataPoint).forEach(key => allKeys.add(key));
+  });
+  
+  // Filter out time-related fields and null values
+  return Array.from(allKeys)
+    .filter(key => 
+      !['timestamp', 'elapsed_time', 'timer_time', 'position_lat', 'position_long'].includes(key) &&
+      data.some(point => point[key] !== null && point[key] !== undefined)
+    )
+    .sort();
+}
 
 // Methods
 const updateChart = () => {
@@ -99,7 +105,7 @@ const updateChart = () => {
   
   selectedAttributes.value.forEach((attr, index) => {
     axisConfigs[attr] = {
-      title: formatAttributeName(attr),
+      title: formatAttributeForDisplay(attr),
       color: colors[index % colors.length],
       side: index % 2 === 0 ? 'left' : 'right'
     };
@@ -114,9 +120,13 @@ const updateChart = () => {
   );
 };
 
-const formatAttributeName = (attribute: string): string => {
-  return attribute
-    .split(/[_\s]/)
+// Helper function to format attribute name for display
+function formatAttributeForDisplay(attribute: string): string {
+  // First, replace underscores with spaces
+  let formatted = attribute.replace(/_/g, ' ');
+  // Then capitalize each word
+  return formatted
+    .split(' ')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
 };
@@ -134,45 +144,10 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   width: 100%;
-  margin: 20px 0;
-}
-
-.chart-controls {
-  margin-bottom: 15px;
-  padding: 10px;
-  background-color: #f5f5f5;
-  border-radius: 5px;
-}
-
-.attribute-selectors {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.attribute-checkbox {
-  display: flex;
-  align-items: center;
-  padding: 5px 10px;
+  border-radius: 8px;
+  overflow: hidden;
   background-color: white;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.attribute-checkbox:hover {
-  background-color: #e8e8e8;
-}
-
-.time-selector {
-  margin-top: 10px;
-}
-
-.time-selector select {
-  margin-left: 10px;
-  padding: 5px;
-  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .no-data {
