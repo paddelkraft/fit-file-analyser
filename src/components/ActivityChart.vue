@@ -145,9 +145,10 @@ onMounted(() => {
   flex-direction: column;
   width: 100%;
   border-radius: 8px;
-  overflow: hidden;
   background-color: white;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  /* Allow scrolling if needed */
+  overflow: visible;
 }
 
 .no-data {

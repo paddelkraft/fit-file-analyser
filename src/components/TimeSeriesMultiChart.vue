@@ -59,10 +59,11 @@ let chartInitialized = false;
 const defaultLayout: any = {
   autosize: true,
   margin: {
-    l: 60,
-    r: 60,
-    t: 60,
-    b: 60,
+    l: 60,  // Left margin
+    r: 60,  // Right margin
+    t: 60,  // Top margin
+    b: 80,  // Bottom margin
+    pad: 0, // No padding to maximize space
   },
   hovermode: 'closest',
   xaxis: {
@@ -73,6 +74,8 @@ const defaultLayout: any = {
 const defaultPlotlyConfig: any = {
   responsive: true,
   displayModeBar: true,
+  autosizable: true, // Allow autosizing
+  scrollZoom: false, // Disable scroll zoom to prevent interference with page scroll
 };
 
 const createPlot = () => {
@@ -215,6 +218,14 @@ const createPlot = () => {
     if (!chartInitialized) {
       Plotly.newPlot(chartContainer.value, plotlyData, plotlyLayout, plotlyConfig);
       chartInitialized = true;
+      
+      // Make the chart responsive to window resize
+      window.addEventListener('resize', () => {
+        Plotly.relayout(chartContainer.value, {
+          'xaxis.autorange': true,
+          'yaxis.autorange': true
+        });
+      });
     } else {
       Plotly.react(chartContainer.value, plotlyData, plotlyLayout, plotlyConfig);
     }
@@ -319,7 +330,8 @@ watch(
 <style scoped>
 .multi-y-axis-chart {
   width: 100%;
-  height: 600px; /* Increased height to ensure X-axis is visible */
+  height: 600px;
   box-sizing: border-box;
+  margin: 0 auto; /* Center the chart if narrower than viewport */
 }
 </style>
