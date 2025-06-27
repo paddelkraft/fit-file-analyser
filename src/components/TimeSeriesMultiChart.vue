@@ -148,6 +148,23 @@ const createPlot = () => {
         tickfont: {
           size: 10,
         },
+        // Add range slider for time selection
+        rangeslider: {
+          visible: true,
+          thickness: 0.08, // Thinner slider to match screenshot
+          bgcolor: '#f8f8f8', 
+          bordercolor: '#e0e0e0',
+          borderwidth: 1,
+          yaxis: {
+            rangemode: 'match'
+          },
+          // Add custom styling for the range slider
+          autorange: true,
+        },
+        // Ensure X axis tick labels show correctly
+        tickformat: '%H:%M:%S',
+        nticks: 10,
+        ticklen: 5,
       },
     };
 
@@ -301,7 +318,14 @@ function determineTickText(data: any[]): string[] | undefined {
   const tickVals = determineTickValues(data);
   if (!tickVals) return undefined;
   
-  return tickVals.map(seconds => formatSecondsToTime(seconds));
+  // Format time as h:mm:ss for better readability
+  return tickVals.map(seconds => {
+    // For zero or small values, add leading zeros for consistency
+    if (seconds < 60) {
+      return `0:00:${seconds.toString().padStart(2, '0')}`;
+    }
+    return formatSecondsToTime(seconds);
+  });
 }
 
 onMounted(() => {

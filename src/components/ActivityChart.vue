@@ -8,6 +8,8 @@
       @update:selectedAttributes="selectedAttributes = $event"
       @update:timeField="selectedTimeField = $event"
     />
+    
+    <!-- We're using only the built-in Plotly range slider for time selection -->
 
     <TimeSeriesMultiChart
       v-if="activityData.length > 0"
@@ -56,10 +58,20 @@ const selectedAttributes = ref<string[]>(props.initialAttributes || []);
 const selectedTimeField = ref<string>('timer_time');
 const chartConfig = ref(transformTimeSeriesData([], []));
 
+// We're using Plotly's built-in range slider, no need for separate state variables
+
 // Watch for changes in selected attributes or time field
 watch([selectedAttributes, selectedTimeField], () => {
   updateChart();
 });
+
+// Watch for changes in activity data
+watch(() => props.activityData, (newData) => {
+  if (newData.length > 0) {
+    // Update chart with full data range
+    updateChart();
+  }
+}, { immediate: true, deep: true });
 
 // Watch for changes in activity data
 watch(() => props.activityData, (newData) => {
@@ -95,9 +107,13 @@ function findAvailableAttributes(data: any[]): string[] {
     .sort();
 }
 
+// We're using Plotly's built-in range selection capability
+
 // Methods
 const updateChart = () => {
   if (props.activityData.length === 0 || selectedAttributes.value.length === 0) return;
+  
+  // Use all data - Plotly's rangeslider will handle the zooming
   
   // Define colors for attributes
   const axisConfigs = {};
@@ -150,6 +166,8 @@ onMounted(() => {
   /* Allow scrolling if needed */
   overflow: visible;
 }
+
+/* Using the built-in Plotly range slider instead */
 
 .no-data {
   display: flex;
