@@ -9,6 +9,15 @@
       @update:timeField="selectedTimeField = $event"
     />
     
+    <FilterControls
+      v-if="activityData.length > 0"
+      :showFiltered="showFilteredData"
+      :method="filterMethod"
+      :stats="filterStats"
+      @update:showFiltered="showFilteredData = $event"
+      @update:method="filterMethod = $event"
+    />
+    
     <!-- We're using only the built-in Plotly range slider for time selection -->
 
     <TimeSeriesMultiChart
@@ -27,8 +36,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, defineAsyncComponent } from 'vue';
+import { ref, onMounted, watch, computed, defineAsyncComponent } from 'vue';
 import { transformTimeSeriesData } from '../utils/TimeSeriesTransformer';
+import { useSensorDataFilter } from '../composables/useSensorDataFilter';
 
 // Import components
 const DataSelector = defineAsyncComponent(() =>
@@ -39,119 +49,141 @@ const TimeSeriesMultiChart = defineAsyncComponent(() =>
   import('./TimeSeriesMultiChart.vue')
 );
 
-interface TimeSeriesDataPoint {
-  timestamp?: string;
-  elapsed_time?: number;
-  timer_time?: number;
-  [key: string]: any; // Allow for other fields
+const FilterControls = defineAsyncComponent(() =>
+  import('./FilterControls.vue')
+);
+
+// Props
+interface Props {
+  activityData: any[];
+  chartTitle?: string;
+  chartHeight?: number;
+  initialAttributes?: string[];
 }
 
-const props = defineProps<{
-  activityData: TimeSeriesDataPoint[];
-  chartTitle?: string;
-  initialAttributes?: string[];
-  chartHeight?: number;
-}>();
+const props = withDefaults(defineProps<Props>(), {
+  activityData: () => [],
+  chartTitle: '',
+  chartHeight: 500,
+  initialAttributes: () => ['heart_rate']
+});
+
+// Utility functions
+const formatAttributeForDisplay = (attr: string): string => {
+  return attr
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+};
 
 // State
 const selectedAttributes = ref<string[]>(props.initialAttributes || []);
 const selectedTimeField = ref<string>('timer_time');
 const chartConfig = ref(transformTimeSeriesData([], []));
 
-// We're using Plotly's built-in range slider, no need for separate state variables
+// Sensor data filtering
+const {
+  showFilteredData,
+  filterMethod,
+  applyFilter,
+  getFilterStats
+} = useSensorDataFilter();
+
+// Methods - Define functions before they're used in watchers
+const updateChart = () => {
+  try {
+    if (!props.activityData || props.activityData.length === 0 || 
+        !selectedAttributes.value || selectedAttributes.value.length === 0) return;
+    
+    // Use filtered or original data based on user preference
+    const dataToUse = showFilteredData.value ? 
+      filteredActivityData.value : props.activityData;
+      
+    // Debug log to confirm which data is being used
+    console.log(`Using ${showFilteredData.value ? 'FILTERED' : 'ORIGINAL'} data for chart. Points:`, 
+      dataToUse?.length || 0);
+  
+    // Define colors for attributes
+    const axisConfigs = {};
+    const colors = ['#FF5733', '#33A1FF', '#33FF57', '#D433FF', '#FFBD33', '#33FFF3', '#FF33C7'];
+    
+    selectedAttributes.value.forEach((attr, index) => {
+      axisConfigs[attr] = {
+        title: formatAttributeForDisplay(attr),
+        color: colors[index % colors.length],
+        side: index % 2 === 0 ? 'left' : 'right'
+      };
+    });
+    
+    chartConfig.value = transformTimeSeriesData(
+      dataToUse,
+      selectedAttributes.value,
+      selectedTimeField.value,
+      props.chartTitle || 'Activity Data',
+      axisConfigs
+    );
+  } catch (error: any) {
+    console.error("Error updating chart:", error?.message ?? "Unknown error");
+  }
+};
+
+// Filtered data - recalculate when data, show status, or filter method changes
+const filteredActivityData = computed(() => {
+  // Force recalculation by referencing filterMethod
+  const currentMethod = filterMethod.value;
+  console.log(`Computing filtered data using method: ${currentMethod}`);
+  
+  if (!showFilteredData.value) {
+    return props.activityData;
+  }
+  
+  // Apply filtering
+  const filtered = applyFilter(props.activityData);
+  
+  // Extra confirmation logging
+  const correctedPoints = filtered?.filter(point => 
+    point?.stroke_rate_corrected || point?.watt_corrected
+  )?.length || 0;
+  
+  console.log(`Filtered data has ${correctedPoints} corrected points out of ${filtered?.length || 0}`);
+  
+  return filtered;
+});
+
+// Filter stats
+const filterStats = computed(() => {
+  return getFilterStats(filteredActivityData.value);
+});
+
+// Watchers - now defined after the updateChart function
+// Watch for changes in filter settings
+watch([showFilteredData, filterMethod], () => {
+  // Force a complete redraw when filter settings change
+  chartConfig.value = transformTimeSeriesData([], []);
+  setTimeout(() => {
+    updateChart();
+  }, 50); // Small delay to ensure chart redraws
+}, { immediate: true });
+
+// Watch for changes in activity data
+watch(() => props.activityData, (newData) => {
+  try {
+    if (newData && newData.length > 0) {
+      // Update chart with full data range
+      updateChart();
+    }
+  } catch (error) {
+    console.error("Error updating chart:", error);
+  }
+}, { immediate: true, deep: false }); // Changed to shallow watch for better performance
 
 // Watch for changes in selected attributes or time field
 watch([selectedAttributes, selectedTimeField], () => {
   updateChart();
 });
 
-// Watch for changes in activity data
-watch(() => props.activityData, (newData) => {
-  if (newData.length > 0) {
-    // Update chart with full data range
-    updateChart();
-  }
-}, { immediate: true, deep: true });
-
-// Watch for changes in activity data
-watch(() => props.activityData, (newData) => {
-  if (newData.length > 0) {
-    // If no attributes are selected yet, select the first two
-    if (selectedAttributes.value.length === 0) {
-      // Find attributes that have non-null values in at least one data point
-      const availableAttrs = findAvailableAttributes(newData);
-      if (availableAttrs.length > 0) {
-        selectedAttributes.value = availableAttrs.slice(0, Math.min(2, availableAttrs.length));
-      }
-    }
-    updateChart();
-  }
-}, { deep: true, immediate: true });
-
-// Helper function to find available attributes in data
-function findAvailableAttributes(data: any[]): string[] {
-  if (data.length === 0) return [];
-  
-  // Get all unique keys from all data points
-  const allKeys = new Set<string>();
-  data.forEach(dataPoint => {
-    Object.keys(dataPoint).forEach(key => allKeys.add(key));
-  });
-  
-  // Filter out time-related fields and null values
-  return Array.from(allKeys)
-    .filter(key => 
-      !['timestamp', 'elapsed_time', 'timer_time', 'position_lat', 'position_long'].includes(key) &&
-      data.some(point => point[key] !== null && point[key] !== undefined)
-    )
-    .sort();
-}
-
-// We're using Plotly's built-in range selection capability
-
-// Methods
-const updateChart = () => {
-  if (props.activityData.length === 0 || selectedAttributes.value.length === 0) return;
-  
-  // Use all data - Plotly's rangeslider will handle the zooming
-  
-  // Define colors for attributes
-  const axisConfigs = {};
-  const colors = ['#FF5733', '#33A1FF', '#33FF57', '#D433FF', '#FFBD33', '#33FFF3', '#FF33C7'];
-  
-  selectedAttributes.value.forEach((attr, index) => {
-    axisConfigs[attr] = {
-      title: formatAttributeForDisplay(attr),
-      color: colors[index % colors.length],
-      side: index % 2 === 0 ? 'left' : 'right'
-    };
-  });
-  
-  chartConfig.value = transformTimeSeriesData(
-    props.activityData,
-    selectedAttributes.value,
-    selectedTimeField.value,
-    props.chartTitle || 'Activity Data',
-    axisConfigs
-  );
-};
-
-// Helper function to format attribute name for display
-function formatAttributeForDisplay(attribute: string): string {
-  // First, replace underscores with spaces
-  let formatted = attribute.replace(/_/g, ' ');
-  // Then capitalize each word
-  return formatted
-    .split(' ')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-};
-
-// Initialize the chart when component is mounted
 onMounted(() => {
-  if (props.activityData.length > 0) {
-    updateChart();
-  }
+  updateChart();
 });
 </script>
 
