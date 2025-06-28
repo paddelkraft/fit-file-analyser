@@ -1,6 +1,7 @@
 import { TrainingSession,type TimeSeriesPoint } from './trainingSession';
 import { type Athlete } from './athlete';
 import { type IZoneDistributionItem } from './zones';
+import { fixSensorNoise } from './fixSensorNoise';
 
 export class TrainingSessionAnalyser {
     trainingSession: TrainingSession;
@@ -31,8 +32,9 @@ export class TrainingSessionAnalyser {
         return this.trainingSession.getAvailableFields();
     }
 
-    getAllReccords(){
-        return this.trainingSession.getAllRecords();
+    getAllRecords(){
+        const records = this.trainingSession.getAllRecords();
+        return fixSensorNoise(records).fixedData;
     }
 
 }

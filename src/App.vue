@@ -55,7 +55,7 @@ async function handleFileContent(content: ArrayBuffer | string, file: File) {
     console.log('Heart Rate Distribution:', heartRateDistribution.value);
 
     // Prepare activity data for the chart
-    activityData.value = analyser.value.getAllReccords();
+    activityData.value = analyser.value.getAllRecords();
     console.log('Activity Data:', activityData.value);
     availableDataFields.value = analyser.value.getAvailableDataFields();
     
