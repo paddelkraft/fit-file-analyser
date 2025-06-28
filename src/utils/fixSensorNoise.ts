@@ -33,6 +33,16 @@ interface NoiseDetectionOptions {
    */
   minValidStrokeRate: number;
   minValidWatt: number;
+  
+  /**
+   * Window size for analysis (number of points before and after to consider)
+   */
+  analysisWindowSize: number;
+  
+  /**
+   * Minimum number of valid points in window to make a decision
+   */
+  minValidPointsInWindow: number;
 }
 
 /**
@@ -64,7 +74,9 @@ function detectSensorNoise(
     maxWattDrop: 60,       // 60% max drop allowed when speed is stable
     speedStabilityThreshold: 15, // 15% speed variation is considered stable
     minValidStrokeRate: 10,
-    minValidWatt: 30
+    minValidWatt: 30,
+    analysisWindowSize: 5,        // Look at 5 points before and after
+    minValidPointsInWindow: 3     // Need at least 3 valid points to make decision
   };
   
   // Merge default options with provided options
@@ -230,20 +242,23 @@ export function fixSensorNoise(
     fixedFields: { [key: string]: number }
   }
 } {
-  // Default options with sensible values
+  // Default options with wider window analysis
   const defaultOptions: NoiseDetectionOptions = {
-    maxStrokeRateDrop: 50, // 50% max drop allowed when speed is stable
-    maxWattDrop: 60,       // 60% max drop allowed when speed is stable
-    speedStabilityThreshold: 15, // 15% speed variation is considered stable
+    maxStrokeRateDrop: 50,
+    maxWattDrop: 60,
+    speedStabilityThreshold: 15,
     minValidStrokeRate: 10,
-    minValidWatt: 30
+    minValidWatt: 30,
+    analysisWindowSize: 5,        // Look at 5 points before and after
+    minValidPointsInWindow: 3     // Need at least 3 valid points to make decision
   };
   
   // Merge default options with provided options
   const mergedOptions = { ...defaultOptions, ...options };
   
-  console.log('[fixSensorNoise] Starting analysis of', dataPoints.length, 'data points');
-  console.log('[fixSensorNoise] Using options:', options);
+  console.log('[fixSensorNoise] Starting sophisticated analysis of', dataPoints.length, 'data points');
+  console.log('[fixSensorNoise] Using window size:', mergedOptions.analysisWindowSize);
+  console.log('[fixSensorNoise] Options:', mergedOptions);
   
   // Create a working copy of the data that we'll modify as we go
   const fixedData: DataPoint[] = dataPoints.map(point => ({ ...point }));
@@ -254,7 +269,7 @@ export function fixSensorNoise(
     'watt': 0
   };
   
-  // Helper function to access fields with different possible naming conventions
+  // Helper functions
   const getValue = (point: DataPoint, fieldBase: string): number | undefined => {
     const variations = [
       fieldBase,
@@ -269,13 +284,10 @@ export function fixSensorNoise(
         return typeof point[variant] === 'number' ? point[variant] as number : undefined;
       }
     }
-    
     return undefined;
   };
   
-  // Helper function to set a field value
   const setValue = (point: DataPoint, fieldBase: string, value: number): void => {
-    // Try to find the existing field name and use that
     const variations = [
       fieldBase,
       fieldBase.replace(' ', '_'),
@@ -290,18 +302,162 @@ export function fixSensorNoise(
         return;
       }
     }
-    
-    // If not found, use the original field name
     point[fieldBase] = value;
   };
   
-  // Process each data point sequentially, using fixed values as we go
+  /**
+   * Analyzes a window of data around a specific point
+   */
+  const analyzeWindow = (
+    centerIndex: number, 
+    fieldName: string, 
+    minValidValue: number
+  ): WindowAnalysis => {
+    const windowSize = mergedOptions.analysisWindowSize;
+    const validValues: number[] = [];
+    
+    // Collect valid values from the window
+    for (let i = Math.max(0, centerIndex - windowSize); 
+         i <= Math.min(fixedData.length - 1, centerIndex + windowSize); 
+         i++) {
+      if (i === centerIndex) continue; // Skip the current point
+      
+      const value = getValue(fixedData[i], fieldName);
+      if (value !== undefined && value >= minValidValue) {
+        validValues.push(value);
+      }
+    }
+    
+    if (validValues.length === 0) {
+      return {
+        validValues: [],
+        averageValue: 0,
+        medianValue: 0,
+        isConsistentlyLow: true,
+        hasRecovery: false,
+        trendDirection: 'stable'
+      };
+    }
+    
+    // Calculate statistics
+    const sortedValues = [...validValues].sort((a, b) => a - b);
+    const averageValue = validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
+    const medianValue = sortedValues[Math.floor(sortedValues.length / 2)];
+    
+    // Check if consistently low (most values below threshold)
+    const lowValues = validValues.filter(v => v < minValidValue * 2);
+    const isConsistentlyLow = lowValues.length > validValues.length * 0.6;
+    
+    // Check for recovery (higher values after the current point)
+    let hasRecovery = false;
+    for (let i = centerIndex + 1; 
+         i <= Math.min(fixedData.length - 1, centerIndex + windowSize); 
+         i++) {
+      const value = getValue(fixedData[i], fieldName);
+      if (value !== undefined && value >= minValidValue * 1.5) {
+        hasRecovery = true;
+        break;
+      }
+    }
+    
+    // Determine trend direction
+    let trendDirection: 'up' | 'down' | 'stable' = 'stable';
+    if (validValues.length >= 3) {
+      const firstHalf = validValues.slice(0, Math.floor(validValues.length / 2));
+      const secondHalf = validValues.slice(Math.ceil(validValues.length / 2));
+      
+      const firstAvg = firstHalf.reduce((sum, val) => sum + val, 0) / firstHalf.length;
+      const secondAvg = secondHalf.reduce((sum, val) => sum + val, 0) / secondHalf.length;
+      
+      const trendChange = ((secondAvg - firstAvg) / firstAvg) * 100;
+      
+      if (trendChange > 10) trendDirection = 'up';
+      else if (trendChange < -10) trendDirection = 'down';
+    }
+    
+    return {
+      validValues,
+      averageValue,
+      medianValue,
+      isConsistentlyLow,
+      hasRecovery,
+      trendDirection
+    };
+  };
+  
+  /**
+   * Calculates a sophisticated replacement value based on window analysis
+   */
+  const calculateReplacementValue = (
+    centerIndex: number,
+    fieldName: string,
+    currentValue: number,
+    minValidValue: number,
+    windowAnalysis: WindowAnalysis
+  ): number => {
+    const { validValues, averageValue, medianValue, trendDirection, hasRecovery } = windowAnalysis;
+    
+    if (validValues.length === 0) {
+      // Fallback to previous fixed value
+      const prevValue = centerIndex > 0 ? getValue(fixedData[centerIndex - 1], fieldName) : undefined;
+      return prevValue && prevValue >= minValidValue ? prevValue : minValidValue * 2;
+    }
+    
+    // Use different strategies based on the situation
+    let replacementValue: number;
+    
+    if (validValues.length >= mergedOptions.minValidPointsInWindow) {
+      // Plenty of data, use sophisticated calculation
+      
+      if (hasRecovery && trendDirection === 'up') {
+        // Recovery expected, use optimistic value
+        replacementValue = Math.max(averageValue, medianValue);
+      } else if (trendDirection === 'down') {
+        // Downward trend, be more conservative
+        replacementValue = Math.min(averageValue, medianValue);
+      } else {
+        // Stable or mixed, use weighted average of mean and median
+        replacementValue = (averageValue * 0.6) + (medianValue * 0.4);
+      }
+      
+      // Apply smoothing based on nearby values
+      const prevValue = centerIndex > 0 ? getValue(fixedData[centerIndex - 1], fieldName) : undefined;
+      const nextValue = centerIndex < fixedData.length - 1 ? getValue(fixedData[centerIndex + 1], fieldName) : undefined;
+      
+      if (prevValue !== undefined && prevValue >= minValidValue) {
+        // Blend with previous value for smoothness
+        replacementValue = (replacementValue * 0.7) + (prevValue * 0.3);
+      }
+      
+      if (nextValue !== undefined && nextValue >= minValidValue && !hasRecovery) {
+        // If next value is valid and no recovery expected, blend toward it
+        replacementValue = (replacementValue * 0.8) + (nextValue * 0.2);
+      }
+      
+    } else {
+      // Limited data, use simpler approach
+      replacementValue = validValues.length > 0 ? medianValue : minValidValue * 2;
+    }
+    
+    // Ensure minimum bounds
+    replacementValue = Math.max(replacementValue, minValidValue);
+    
+    // Prevent unrealistic jumps
+    const prevValue = centerIndex > 0 ? getValue(fixedData[centerIndex - 1], fieldName) : undefined;
+    if (prevValue !== undefined && prevValue > 0) {
+      const maxJump = prevValue * 2; // Don't jump more than 2x previous value
+      replacementValue = Math.min(replacementValue, maxJump);
+    }
+    
+    return Math.round(replacementValue * 10) / 10; // Round to 1 decimal place
+  };
+  
+  // Process each data point sequentially with window analysis
   for (let i = 1; i < fixedData.length; i++) {
     const currentPoint = fixedData[i];
-    const prevPoint = fixedData[i - 1]; // This now contains any fixes from previous iterations
-    const nextPoint = i < fixedData.length - 1 ? fixedData[i + 1] : null;
+    const prevPoint = fixedData[i - 1];
     
-    // Get current and previous values (using potentially fixed previous values)
+    // Get current and previous values
     const currentSpeed = getValue(currentPoint, 'enhanced_speed');
     const prevSpeed = getValue(prevPoint, 'enhanced_speed');
     
@@ -319,9 +475,9 @@ export function fixSensorNoise(
     if (isSpeedStable && currentSpeed > 1.0) {
       let pointWasFixed = false;
       
-      // Check stroke rate for noise
+      // Check stroke rate for noise with window analysis
       const currentStrokeRate = getValue(currentPoint, 'stroke rate');
-      const prevStrokeRate = getValue(prevPoint, 'stroke rate'); // This is now the FIXED previous value
+      const prevStrokeRate = getValue(prevPoint, 'stroke rate');
       
       if (
         currentStrokeRate !== undefined && 
@@ -335,34 +491,31 @@ export function fixSensorNoise(
           strokeRateDrop > mergedOptions.maxStrokeRateDrop || 
           (currentStrokeRate < mergedOptions.minValidStrokeRate && prevStrokeRate > mergedOptions.minValidStrokeRate)
         ) {
-          // Use the fixed previous value as the base for correction
-          let suggestedValue = prevStrokeRate;
+          // Perform window analysis
+          const windowAnalysis = analyzeWindow(i, 'stroke rate', mergedOptions.minValidStrokeRate);
           
-          // If there's a next point with a reasonable value, use interpolation
-          if (nextPoint) {
-            const nextStrokeRate = getValue(nextPoint, 'stroke rate');
-            if (nextStrokeRate !== undefined && nextStrokeRate > mergedOptions.minValidStrokeRate) {
-              // Use linear interpolation between fixed prev and next
-              suggestedValue = (prevStrokeRate + nextStrokeRate) / 2;
-            }
-          }
+          // Calculate sophisticated replacement value
+          const replacementValue = calculateReplacementValue(
+            i, 'stroke rate', currentStrokeRate, mergedOptions.minValidStrokeRate, windowAnalysis
+          );
           
-          // Apply the fix to the working data
-          setValue(currentPoint, 'stroke rate', suggestedValue);
+          // Apply the fix
+          setValue(currentPoint, 'stroke rate', replacementValue);
           
           pointWasFixed = true;
           fixedFields['stroke rate'] = (fixedFields['stroke rate'] || 0) + 1;
           
           console.log(
-            `[fixSensorNoise] Fixed noise in stroke rate: ${currentStrokeRate} -> ${suggestedValue} ` +
-            `(drop: ${strokeRateDrop.toFixed(1)}%, speed: ${currentSpeed}, point: ${i})`
+            `[fixSensorNoise] Fixed stroke rate: ${currentStrokeRate} -> ${replacementValue} ` +
+            `(drop: ${strokeRateDrop.toFixed(1)}%, window: ${windowAnalysis.validValues.length} points, ` +
+            `trend: ${windowAnalysis.trendDirection}, recovery: ${windowAnalysis.hasRecovery}, point: ${i})`
           );
         }
       }
       
-      // Check watt for noise
+      // Check watt for noise with window analysis
       const currentWatt = getValue(currentPoint, 'watt');
-      const prevWatt = getValue(prevPoint, 'watt'); // This is now the FIXED previous value
+      const prevWatt = getValue(prevPoint, 'watt');
       
       if (
         currentWatt !== undefined && 
@@ -375,39 +528,35 @@ export function fixSensorNoise(
           wattDrop > mergedOptions.maxWattDrop || 
           (currentWatt < mergedOptions.minValidWatt && prevWatt > mergedOptions.minValidWatt)
         ) {
-          // Use the fixed previous value as the base for correction
-          let suggestedValue = prevWatt;
+          // Perform window analysis
+          const windowAnalysis = analyzeWindow(i, 'watt', mergedOptions.minValidWatt);
           
-          // If there's a next point with a reasonable value, use interpolation
-          if (nextPoint) {
-            const nextWatt = getValue(nextPoint, 'watt');
-            if (nextWatt !== undefined && nextWatt > mergedOptions.minValidWatt) {
-              // Use linear interpolation between fixed prev and next
-              suggestedValue = (prevWatt + nextWatt) / 2;
-            }
-          }
+          // Calculate sophisticated replacement value
+          const replacementValue = calculateReplacementValue(
+            i, 'watt', currentWatt, mergedOptions.minValidWatt, windowAnalysis
+          );
           
-          // Apply the fix to the working data
-          setValue(currentPoint, 'watt', suggestedValue);
+          // Apply the fix
+          setValue(currentPoint, 'watt', replacementValue);
           
           pointWasFixed = true;
           fixedFields['watt'] = (fixedFields['watt'] || 0) + 1;
           
           console.log(
-            `[fixSensorNoise] Fixed noise in watt: ${currentWatt} -> ${suggestedValue} ` +
-            `(drop: ${wattDrop.toFixed(1)}%, speed: ${currentSpeed}, point: ${i})`
+            `[fixSensorNoise] Fixed watt: ${currentWatt} -> ${replacementValue} ` +
+            `(drop: ${wattDrop.toFixed(1)}%, window: ${windowAnalysis.validValues.length} points, ` +
+            `trend: ${windowAnalysis.trendDirection}, recovery: ${windowAnalysis.hasRecovery}, point: ${i})`
           );
         }
       }
       
       if (pointWasFixed) {
         noisyPoints++;
-        console.log(`[fixSensorNoise] Processing noisy point ${i}/${fixedData.length}`);
       }
     }
   }
   
-  console.log(`[fixSensorNoise] Noise detection completed, found ${noisyPoints} noisy points`);
+  console.log(`[fixSensorNoise] Sophisticated noise detection completed, found ${noisyPoints} noisy points`);
   console.log(`[fixSensorNoise] Stroke Rate fixes: ${fixedFields['stroke rate']}`);
   console.log(`[fixSensorNoise] Watt fixes: ${fixedFields['watt']}`);
   
