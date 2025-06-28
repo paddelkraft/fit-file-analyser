@@ -54,12 +54,12 @@ function detectSensorNoise(
 ): NoiseDetectionResult[] {
   // Default options with sensible values
   const defaultOptions: NoiseDetectionOptions = {
-    maxStrokeRateDrop: 50, // 50% max drop allowed when speed is stable
-    maxWattDrop: 60,       // 60% max drop allowed when speed is stable
+    maxStrokeRateDrop: 20, // 50% max drop allowed when speed is stable
+    maxWattDrop: 20,       // 60% max drop allowed when speed is stable
     speedStabilityThreshold: 15, // 15% speed variation is considered stable
     minValidStrokeRate: 10,
     minValidWatt: 30,
-    analysisWindowSize: 5,        // Look at 5 points before and after
+    analysisWindowSize: 10,        // Look at 5 points before and after
     minValidPointsInWindow: 3     // Need at least 3 valid points to make decision
   };
   
@@ -229,12 +229,12 @@ export function fixSensorNoise(
   }
 } {
   const defaultOptions: NoiseDetectionOptions = {
-    maxStrokeRateDrop: 50,
-    maxWattDrop: 60,
-    speedStabilityThreshold: 15,
+    maxStrokeRateDrop: 10,
+    maxWattDrop: 10,
+    speedStabilityThreshold: 5,
     minValidStrokeRate: 10,
     minValidWatt: 30,
-    analysisWindowSize: 5,
+    analysisWindowSize: 10,
     minValidPointsInWindow: 3,
     // New advanced features
     multiFieldCorrelation: true,
